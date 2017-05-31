@@ -1,0 +1,98 @@
+- hosts: localhost
+  sudo: True
+  vars:
+   mysql_root_password: password
+   mysql_wordpress_user: wordpress
+   mysql_wordpress_password: wordpress
+   wordpress_db_name: wordpress
+   #url: http://localhost
+   #title: worpdress
+   #admin_user: wordpress
+   #admin_pwd: wordpress
+   #admin_email: example@example.com
+
+  tasks:
+    - name: "Instala nginx"
+      apt: name=nginx state=latest update_cache=yes install_recommends=yes
+
+    - name: "Instala PHP-FPM"
+      apt: name=php-fpm state=latest install_recommends=yes
+
+    - name: "Instala MySQL"
+      apt: name=mysql-server state=latest install_recommends=yes
+    
+    - name: "Instala Extensões de MySQL"
+      apt: name=php-mysql state=latest install_recommends=yes
+    
+    - name: "Instala python-mysqldb"
+      apt: name=python-mysqldb state=latest install_recommends=yes
+    
+    - name: "Copia configuração do ngnix para /etc/nginx"
+      copy: src=wordpress.nginx dest=/etc/nginx/sites-available/wordpress 
+
+    - name: "Apaga o site default"
+      file: path=/etc/nginx/sites-enabled/default state=absent
+
+    - name: "Ativa o site"
+      file: src=/etc/nginx/sites-available/wordpress dest=/etc/nginx/sites-enabled/wordpress state=link
+   
+    - name: "Reinicia nginx"
+      service: name=nginx state=restarted
+    
+    - name: "Cria pasta do Wordpress"
+      file: dest=/opt/wordpress mode=755 state=directory owner=www-data
+
+    - name: "Download do Wordpress"
+      get_url: url=https://wordpress.org/latest.tar.gz dest=/tmp/latest.tar.gz
+
+    - name: "Descompacta wordpress"
+      unarchive: src=/tmp/latest.tar.gz dest=/opt copy=no 
+
+    - name: "Acerta permissões"
+      file: path=/opt/wordpress recurse=yes owner=www-data group=www-data
+
+    - name: "Inicia MySQL"
+      service: name=mysql state=started enabled=true
+
+    - name: "Cria senha de root para mysql"
+      mysql_user: name=root
+              password="{{ mysql_root_password }}"
+              check_implicit_admin=yes
+              priv="*.*:ALL,GRANT"
+              state=present
+      with_items:
+        - 127.0.0.1
+        - ::1
+        - localhost
+   
+    - name: "Cria wordpress database"
+      mysql_db: name=wordpress 
+              login_user=root
+              login_password="{{ mysql_root_password }}"
+              state=present
+
+    - name: "Cria usuário wordpress"
+      mysql_user: name="{{ mysql_wordpress_user }}"
+              password="{{ mysql_wordpress_password}}"
+              priv="*.*:ALL,GRANT"
+              check_implicit_admin=yes
+              login_user=root
+              login_password="{{ mysql_root_password }}"
+              state=present
+      with_items:
+        - 127.0.0.1
+        - ::1
+        - localhost
+
+    - name: "Copia arquivo de config de database do Wordpress"
+      copy: src=wp-config.php dest=/opt/wordpress/wp-config.php
+
+    - name: "Download do WP-CLI"
+      sudo: true
+      shell: 'curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar && mv wp-cli.phar /usr/local/bin/wp'
+
+    - name: "Acerta permissoes do WP-CLI"
+      file: path=/usr/local/bin/wp state=file mode=755
+
+    #- name: Install Wordpress
+    #  command: wp core install --url={{url}} --title="{{title}}" --admin_user={{admin_user}} --admin_password={{admin_pwd}} --admin_email={{admin_email}} --allow-root --path='/opt/wordpress'
